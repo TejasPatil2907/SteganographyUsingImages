@@ -16,72 +16,86 @@ def showimage():
                                           title='Select Image File',
                                           filetypes=(("PNG file", "*.png"),
                                                      ("JPG File", "*.jpg"),
-                                                     ("All Files", "*.txt")))
+                                                     ("All Files", "*.*")))
     img = Image.open(filename)
+    img = img.resize((250, 250), Image.Resampling.LANCZOS)
     img = ImageTk.PhotoImage(img)
     lbl.configure(image=img, width=250, height=250)
     lbl.image = img
 
+def text_to_binary(message):
+    return ''.join(format(ord(char), '08b') for char in message) + '1111111111111110'  # EOF Marker
+
+def binary_to_text(binary_message):
+    chars = [binary_message[i:i+8] for i in range(0, len(binary_message), 8)]
+    message = ''.join(chr(int(c, 2)) for c in chars if int(c, 2) != 65534)  # Stop at EOF marker
+    return message
+
 def hide(image_path, secret_message):
     img = Image.open(image_path)
-    binary_message = ''.join(format(ord(char), '08b') for char in secret_message)
+    binary_message = text_to_binary(secret_message)
+
     if len(binary_message) > img.width * img.height * 3:
         raise ValueError("Message is too long to be hidden in the image.")
+
     data_index = 0
+    pixels = img.load()
+    
     for y in range(img.height):
         for x in range(img.width):
-            pixel = list(img.getpixel((x, y)))
-            for color_channel in range(3):
+            pixel = list(pixels[x, y])
+            for i in range(3):  # R, G, B
                 if data_index < len(binary_message):
-                    pixel[color_channel] = (pixel[color_channel] & 0) | int(binary_message[data_index])
+                    pixel[i] = pixel[i] & 254 | int(binary_message[data_index])
                     data_index += 1
-            img.putpixel((x, y), tuple(pixel))
+            pixels[x, y] = tuple(pixel)
+            if data_index >= len(binary_message):
+                break
+        if data_index >= len(binary_message):
+            break
+
     output_path = "hidden.png"
     img.save(output_path)
     return output_path
 
 def reveal(image_path):
-    # Open the image
     img = Image.open(image_path)
-    # Initialize an empty string to store the binary message
     binary_message = ''
-    # Iterate through each pixel of the image
+    pixels = img.load()
+
     for y in range(img.height):
         for x in range(img.width):
-            # Get the pixel value (RGB)
-            pixel = list(img.getpixel((x, y)))
-            # Iterate through each color channel (R, G, B)
-            for color_channel in range(3):
-                # Extract the least significant bit and add it to the binary message
-                binary_message += str(pixel[color_channel] & 1)
-    # Convert the binary message to ASCII characters
-    message = "".join(chr(int(binary_message[i:i+8], 2)) for i in range(0, len(binary_message), 8))
-    return keep_alphanumeric(message)
+            pixel = list(pixels[x, y])
+            for i in range(3):  # R, G, B
+                binary_message += str(pixel[i] & 1)
 
-def keep_alphanumeric(input_string):
-    alphanumeric_string = re.sub(r'[^a-zA-Z0-9]', '', input_string)
-    return alphanumeric_string
+    if '1111111111111110' in binary_message:
+        binary_message = binary_message[:binary_message.index('1111111111111110')]  # Remove EOF marker
+    
+    return binary_to_text(binary_message)
+
 def Hide():
     global filename
-    message = text1.get(1.0, END)
-    output_path = hide(str(filename), message.strip())
-    text1.insert(END, "\nImage hidden successfully! Saved as: " + output_path)
+    message = text1.get(1.0, END).strip()
+    if not filename:
+        text1.insert(END, "\nPlease select an image first!\n")
+        return
+    output_path = hide(filename, message)
+    text1.insert(END, "\nImage hidden successfully! Saved as: " + output_path + "\n")
 
 def Show():
+    global filename
+    if not filename:
+        text1.insert(END, "\nPlease select an image first!\n")
+        return
     clear_message = reveal(filename)
-    text1.insert(END, "Hidden message: " + clear_message)
-
-def save():
-    global filenames
-    message = text1.get(1.0, END)
-    output_path = hide(filename, message.strip())
-    text1.insert(END, "\nImage hidden and saved successfully! Saved as: " + output_path)
+    text1.insert(END, "Hidden message: " + clear_message + "\n")
 
 image_icon = PhotoImage(file="logo.jpg")
 root.iconphoto(False, image_icon)
 logo = PhotoImage(file="logo.png")
 Label(root, image=logo, bg="#2E2E2E").place(x=10, y=0)
-Label(root, text="Image SteganoGraphy", bg="#2E2E2E", fg="white", font="arial 25 bold").place(x=100, y=20)
+Label(root, text="Image Steganography", bg="#2E2E2E", fg="white", font="arial 25 bold").place(x=100, y=20)
 
 f = Frame(root, bd=3, bg="black", width=340, height=280, relief=GROOVE)
 f.place(x=10, y=80)
